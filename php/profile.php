@@ -1,25 +1,57 @@
 <?php
-session_start();
+require __DIR__ . "/vendor/autoload.php"; // Include Composer autoloader
 
-$response = [];
+use Predis\Client;
 
-if (isset($_SESSION["user_id"])) {
+$is_invalid = false;
+
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $mysqli = require __DIR__ . "/database.php";
 
-    $sql = "SELECT * FROM user WHERE id = {$_SESSION["user_id"]}";
+    $sql = sprintf("SELECT * FROM user WHERE email = '%s'", $mysqli->real_escape_string($_POST["email"]));
 
     $result = $mysqli->query($sql);
 
     $user = $result->fetch_assoc();
 
     if ($user) {
-        $response = [
-            "user" => $user,
-            "isLoggedIn" => true
-        ];
-    }
-}
+        if (password_verify($_POST["password"], $user["password_hash"])) {
+      
+            session_start();
+            
+                session_regenerate_id();
+                
+                $_SESSION["user_id"] = $user["id"];
+                
+                echo json_encode(["redirect" => "profile.html"]);
+                exit;
+            //Redis setup
+            $redis = new Client();
+            $sessionKey = 'user_session:' . session_id();
 
-echo json_encode($response);
+            // Store user data in Redis
+            $redis->set($sessionKey, json_encode(["user_id" => $user["id"]]));
+
+            // Set session expiration time (adjust as needed)
+            $redis->expire($sessionKey, 3600);
+
+            session_start();
+
+            // Use session_regenerate_id after starting the session
+            session_regenerate_id();
+
+            // Store user ID in the session
+            $_SESSION["user_id"] = $user["id"];
+
+            echo json_encode(["redirect" => "profile.html"]);
+            exit;
+        }
+    }
+
+    $is_invalid = true;
+
+    echo json_encode(["is_invalid" => $is_invalid]);
+}
+?>
 
 ?>
